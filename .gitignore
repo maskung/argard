@@ -1,0 +1,7 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+bin
+include
+version
+lib
+icons.go
+weather_sign.txt
