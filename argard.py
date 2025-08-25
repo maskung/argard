@@ -1,6 +1,7 @@
 import json
 import time
 import math
+import configparser
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
 from urllib.request import Request, urlopen
@@ -17,19 +18,32 @@ from rich.text import Text
 from rich.columns import Columns
 
 # --- API Configuration ---
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+# Weather.com API
+weather_com_config = config['WeatherCom']
+STATION_ID = weather_com_config.get('STATION_ID')
+WEATHER_COM_API_KEY = weather_com_config.get('API_KEY')
 API_URL = (
-    "https://api.weather.com/v2/pws/observations/current?"
-    "stationId=IMAKHA6&format=json&units=m&apiKey=12f3d3276a7b4190b3d3276a7bd1908d"
+    f"https://api.weather.com/v2/pws/observations/current?"
+    f"stationId={STATION_ID}&format=json&units=m&apiKey={WEATHER_COM_API_KEY}"
 )
-OPENWEATHER_API_KEY = "fe95920166f28786c34849635cc40d2e"
-LATITUDE = 12.701
-LONGITUDE = 102.231
+
+# OpenWeather API
+openweather_config = config['OpenWeather']
+OPENWEATHER_API_KEY = openweather_config.get('API_KEY')
+LATITUDE = openweather_config.getfloat('LATITUDE')
+LONGITUDE = openweather_config.getfloat('LONGITUDE')
 OPENWEATHER_API_URL = (
     f"https://api.openweathermap.org/data/3.0/onecall?"
     f"lat={LATITUDE}&lon={LONGITUDE}&exclude=minutely,daily,alerts&units=metric&appid="
     f"{OPENWEATHER_API_KEY}"
 )
-REFRESH_SECONDS = 60
+
+# General Settings
+general_config = config['General']
+REFRESH_SECONDS = general_config.getint('REFRESH_SECONDS')
 
 # --- Data Fetching Functions ---
 
@@ -139,12 +153,12 @@ def thermal_panel(obs): # (Restored)
     temp, heat_index, dew, chill = m.get("temp","-"), m.get("heatIndex","-"), m.get("dewpt","-"), m.get("windChill","-")
     feeling, style = get_feeling_level(heat_index)
     grid = Table.grid(padding=(0, 2))
-    grid.add_row("🌡️ Temperature", f"{temp} °C")
+    grid.add_row("🌡️  Temperature", f"{temp} °C")
     grid.add_row("🔥 Feels like", f"{heat_index} °C")
     grid.add_row("🤔 Feeling", Text(feeling, style=style))
     grid.add_row("💧 Dew point", f"{dew} °C")
-    grid.add_row("❄️ Wind chill", f"{chill} °C")
-    return Panel(Align.center(grid), title="🌡️ Thermal Comfort", box=box.ROUNDED, padding=(0, 1))
+    grid.add_row("❄️  Wind chill", f"{chill} °C")
+    return Panel(Align.center(grid), title="🌡️  Thermal Comfort", box=box.ROUNDED, padding=(0, 1))
 
 def wind_panel(obs): # (Restored)
     m = obs.get("metric") or {}
@@ -168,16 +182,16 @@ def rain_panel(obs): # (Restored)
     grid.add_row("📈 Rate:", f"{rate} mm/h")
     grid.add_row("💧 Intensity:", Text(desc, style=style))
     grid.add_row("📅 Today:", f"{total} mm")
-    return Panel(Align.center(grid), title="🌧️ Rainfall", box=box.ROUNDED, padding=(0, 1))
+    return Panel(Align.center(grid), title="🌧️  Rainfall", box=box.ROUNDED, padding=(0, 1))
 
 def solar_panel(obs): # (Restored)
     uv, solar = obs.get("uv", "-"), obs.get("solarRadiation", "-")
     desc, style = get_uv_description(uv)
     grid = Table.grid(padding=(0, 2))
-    grid.add_row("☀️ UV Index:", Text(str(uv), style=style))
+    grid.add_row("☀️  UV Index:", Text(str(uv), style=style))
     grid.add_row("😎 UV Level:", Text(desc, style=style))
     grid.add_row("⚡ Solar Rad.:", f"{solar} W/m²")
-    return Panel(Align.center(grid), title="☀️ Solar • UV", box=box.ROUNDED, padding=(0, 1))
+    return Panel(Align.center(grid), title="☀️  Solar • UV", box=box.ROUNDED, padding=(0, 1))
 
 def humidity_panel(obs): # (Restored)
     humid = obs.get("humidity", "-")
@@ -191,7 +205,7 @@ def humidity_panel(obs): # (Restored)
 
 def barometer_panel(obs): # (Restored)
     pressure = obs.get("metric", {}).get("pressure", "-")
-    return Panel(Align.center(f"[bold bright_green]{pressure}[/] hPa"), title="🌡️ Barometer", box=box.ROUNDED)
+    return Panel(Align.center(f"[bold bright_green]{pressure}[/] hPa"), title="🌡️  Barometer", box=box.ROUNDED)
 
 def sun_panel(obs): # (Restored)
     lat, lon = obs.get("lat"), obs.get("lon")
@@ -207,8 +221,8 @@ def sun_panel(obs): # (Restored)
     grid = Table.grid()
     grid.add_row("🌅 Sunrise:", f"{int(sunrise):02d}:{int((sunrise%1)*60):02d}")
     grid.add_row("🌇 Sunset:", f"{int(sunset):02d}:{int((sunset%1)*60):02d}")
-    grid.add_row("☀️ Daylight:", f"{int(daylight)}h {int((daylight%1)*60)}m")
-    return Panel(Align.center(grid), title="☀️ Sun Rise/Set", box=box.ROUNDED)
+    grid.add_row("☀️  Daylight:", f"{int(daylight)}h {int((daylight%1)*60)}m")
+    return Panel(Align.center(grid), title="☀️  Sun Rise/Set", box=box.ROUNDED)
 
 def moon_phase_panel(obs): # (Restored)
     """Display current moon phase based on date with new moon and full moon info"""
@@ -265,10 +279,10 @@ def create_hourly_forecast_panels(hourly_data: List[Dict[str, Any]]) -> Columns:
         pop = f"{hour.get('pop', 0) * 100:.0f}%"
         grid = Table.grid(expand=True)
         grid.add_column(width=10); grid.add_column()
-        grid.add_row("🌡️ Temp:", f"[green]{temp}[/]")
+        grid.add_row("🌡️  Temp:", f"[green]{temp}[/]")
         grid.add_row("💧 Precip:", f"[blue]{pop}[/]")
         if 'rain' in hour and '1h' in hour['rain']:
-            grid.add_row("🌧️ Rain:", f"[cyan]{hour['rain']['1h']:.2f} mm[/]")
+            grid.add_row("🌧️  Rain:", f"[cyan]{hour['rain']['1h']:.2f} mm[/]")
         grid.add_row(f"[white]{weather_icon}[/]", f"[white]{weather_desc}[/]")
         panels.append(Panel(grid, title=f"[magenta]{time_str}[/]", box=box.ROUNDED, expand=True))
     return Columns(panels, equal=True, expand=True)
