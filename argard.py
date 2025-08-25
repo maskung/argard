@@ -277,9 +277,12 @@ def create_hourly_forecast_panels(hourly_data: List[Dict[str, Any]]) -> Columns:
         weather_desc = hour["weather"][0]["description"].title()
         weather_icon = get_weather_emoji(hour["weather"][0]["icon"])
         pop = f"{hour.get('pop', 0) * 100:.0f}%"
+        wind_speed_kmh = ms_to_kmh(hour.get("wind_speed", "-"))
+        wind_arrow = deg_to_arrow(hour.get("wind_deg", "-"))
         grid = Table.grid(expand=True)
         grid.add_column(width=10); grid.add_column()
         grid.add_row("🌡️  Temp:", f"[green]{temp}[/]")
+        grid.add_row("💨 Wind:", f"[orange3]{wind_arrow} {wind_speed_kmh} km/h[/]")
         grid.add_row("💧 Precip:", f"[blue]{pop}[/]")
         if 'rain' in hour and '1h' in hour['rain']:
             grid.add_row("🌧️  Rain:", f"[cyan]{hour['rain']['1h']:.2f} mm[/]")
