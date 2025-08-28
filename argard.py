@@ -108,8 +108,8 @@ def get_rain_description(r):
         r = float(r)
         if r == 0: return "☀️ No Rain", "dim"
         if r < 2.5: return "💧 Light", "green"
-        if r < 10: return "🌧️ Moderate", "yellow"
-        if r < 50: return "⛈️ Heavy", "red"
+        if r < 10: return "🌧️  Moderate", "yellow"
+        if r < 50: return "⛈️   Heavy", "red"
         return "🌊 Violent", "bold magenta"
     except: return "🤷 N/A", "dim"
 def get_uv_description(u):
