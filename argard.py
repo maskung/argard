@@ -144,7 +144,7 @@ def header_panel(obs, error): # (Restored)
         style="bold", 
         box=box.SIMPLE, 
         padding=(0, 1),
-        subtitle="v1.0.2",
+        subtitle="v1.0.3",
         subtitle_align="right"
     )
 
@@ -281,12 +281,14 @@ def create_hourly_forecast_panels(hourly_data: List[Dict[str, Any]]) -> Columns:
         wind_arrow = deg_to_arrow(hour.get("wind_deg", "-"))
         clouds = f"{hour.get('clouds', '-')} %"
         visibility_km = f"{hour.get('visibility', 0) / 1000:.1f} km"
+        pressure = f"{hour.get('pressure', '-')} hPa"
         grid = Table.grid(expand=True)
         grid.add_column(width=10); grid.add_column()
         grid.add_row("🌡️  Temp:", f"[green]{temp}[/]")
         grid.add_row("☁️  Clouds:", f"[grey70]{clouds}[/]")
         grid.add_row("💨 Wind:", f"[orange3]{wind_arrow} {wind_speed_kmh} km/h[/]")
         grid.add_row("👁️  Vis:", f"[white]{visibility_km}[/]")
+        grid.add_row(" barometer:", f"[bright_green]{pressure}[/]")
         grid.add_row("💧 Precip:", f"[blue]{pop}[/]")
         if 'rain' in hour and '1h' in hour['rain']:
             grid.add_row("🌧️  Rain:", f"[cyan]{hour['rain']['1h']:.2f} mm[/]")
