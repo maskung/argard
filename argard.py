@@ -191,7 +191,7 @@ def header_panel(obs, error): # (Restored)
         style="bold", 
         box=box.SIMPLE, 
         padding=(0, 1),
-        subtitle="v1.1.0",
+        subtitle="v1.1.1",
         subtitle_align="right"
     )
 
@@ -374,7 +374,7 @@ def build_full_forecast_layout(hourly_data: List[Dict[str, Any]]) -> Layout:
         time_until_switch = display_mode.auto_switch_interval - (time.time() - display_mode.last_switch_time)
         footer_text = Text(f"⌨️ Auto-switch in {int(time_until_switch)}s • Ctrl+C to quit", justify="center", style="yellow")
     else:
-        footer_text = Text("⌨️ Type 'n' + Enter: return to main • Ctrl+C: quit", justify="center", style="yellow")
+        footer_text = Text("⌨️ Enter key: return to main • Ctrl+C: quit", justify="center", style="yellow")
     footer_panel = Panel(footer_text, box=box.SIMPLE, padding=(0, 1))
 
     # Layout structure
@@ -417,7 +417,7 @@ def build_layout(obs: Dict[str, Any], error: str, hourly_data: List[Dict[str, An
         time_until_switch = display_mode.auto_switch_interval - (time.time() - display_mode.last_switch_time)
         status_text = f"⌨️ Press Ctrl+C to quit • Auto-switch in {int(time_until_switch)}s • 🔄 Auto-refresh every "
     else:
-        status_text = f"⌨️ Ctrl+C: quit • Type 'n' + Enter: 12-24hr forecast • 🔄 Auto-refresh every "
+        status_text = f"⌨️ Ctrl+C: quit • Enter key: 12-24hr forecast • 🔄 Auto-refresh every "
 
     foot = Text(status_text, justify="center")
     foot.append(str(REFRESH_SECONDS), style="bold").append("s")
@@ -431,11 +431,32 @@ input_queue = queue.Queue()
 
 def input_thread():
     """Thread to handle keyboard input"""
+    import select
+
     while True:
         try:
-            key = input().strip().lower()
-            if key == 'n':
-                input_queue.put('toggle')
+            # Check if input available
+            if select.select([sys.stdin], [], [], 0.1) == ([sys.stdin], [], []):
+                key = sys.stdin.read(1)
+
+                # Check for Enter key specifically (both \r and \n)
+                if key in ['\r', '\n']:
+                    input_queue.put('toggle')
+                    continue  # Skip further checks for this key press
+
+                # Check for arrow keys (escape sequences)
+                if key == '\x1b':  # ESC sequence start
+                    # Read the rest of the sequence
+                    if select.select([sys.stdin], [], [], 0.1) == ([sys.stdin], [], []):
+                        seq1 = sys.stdin.read(1)
+                        if seq1 == '[':
+                            if select.select([sys.stdin], [], [], 0.1) == ([sys.stdin], [], []):
+                                seq2 = sys.stdin.read(1)
+                                if seq2 == 'D':  # Left arrow
+                                    input_queue.put('toggle')
+                                elif seq2 == 'C':  # Right arrow
+                                    input_queue.put('toggle')
+                # All other keys are ignored - only Enter works now
         except:
             break
 
