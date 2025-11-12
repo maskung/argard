@@ -1,6 +1,9 @@
 import json
+import sys
 import time
 import math
+import threading
+import queue
 import configparser
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Tuple
@@ -44,6 +47,50 @@ OPENWEATHER_API_URL = (
 # General Settings
 general_config = config['General']
 REFRESH_SECONDS = general_config.getint('REFRESH_SECONDS')
+
+# --- Display Mode State ---
+class DisplayMode:
+    def __init__(self):
+        self.full_forecast = False
+        self.lock = threading.Lock()
+        self.mode_changed = False
+        self.auto_switch_interval = 10  # Auto-switch every 10 seconds for testing
+        self.last_switch_time = time.time()
+        self.enable_auto_switch = False  # Disable auto-switch, use manual key press
+
+    def toggle_forecast(self):
+        with self.lock:
+            self.full_forecast = not self.full_forecast
+            self.mode_changed = True
+
+    def auto_toggle(self):
+        """Auto toggle forecast mode for testing purposes"""
+        with self.lock:
+            if self.enable_auto_switch:
+                current_time = time.time()
+                if current_time - self.last_switch_time >= self.auto_switch_interval:
+                    self.full_forecast = not self.full_forecast
+                    self.mode_changed = True
+                    self.last_switch_time = current_time
+                    return True
+            return False
+
+    def is_full_forecast(self):
+        with self.lock:
+            return self.full_forecast
+
+    def has_mode_changed(self):
+        with self.lock:
+            if self.mode_changed:
+                self.mode_changed = False
+                return True
+            return False
+
+    def clear_mode_change(self):
+        with self.lock:
+            self.mode_changed = False
+
+display_mode = DisplayMode()
 
 # --- Data Fetching Functions ---
 
@@ -144,7 +191,7 @@ def header_panel(obs, error): # (Restored)
         style="bold", 
         box=box.SIMPLE, 
         padding=(0, 1),
-        subtitle="v1.0.3",
+        subtitle="v1.1.0",
         subtitle_align="right"
     )
 
@@ -282,9 +329,12 @@ def create_hourly_forecast_panels(hourly_data: List[Dict[str, Any]]) -> Columns:
         clouds = f"{hour.get('clouds', '-')} %"
         visibility_km = f"{hour.get('visibility', 0) / 1000:.1f} km"
         pressure = f"{hour.get('pressure', '-')} hPa"
+        humidity = f"{hour.get('humidity', '-')} %"
+
         grid = Table.grid(expand=True)
         grid.add_column(width=10); grid.add_column()
         grid.add_row("🌡️  Temp:", f"[green]{temp}[/]")
+        grid.add_row("💧 Humid:", f"[cyan]{humidity}[/]")
         grid.add_row("☁️  Clouds:", f"[grey70]{clouds}[/]")
         grid.add_row("💨 Wind:", f"[orange3]{wind_arrow} {wind_speed_kmh} km/h[/]")
         grid.add_row("👁️  Vis:", f"[white]{visibility_km}[/]")
@@ -296,9 +346,58 @@ def create_hourly_forecast_panels(hourly_data: List[Dict[str, Any]]) -> Columns:
         panels.append(Panel(grid, title=f"[magenta]{time_str}[/]", box=box.ROUNDED, expand=True))
     return Columns(panels, equal=True, expand=True)
 
+# --- Full Screen Forecast Layout ---
+
+def build_full_forecast_layout(hourly_data: List[Dict[str, Any]]) -> Layout:
+    """Create a full-screen layout showing only the hourly forecast (next 12 hours from current time)"""
+    layout = Layout(name="root")
+
+    # Header
+    header_text = Text("🌤️ HOURLY FORECAST (NEXT 12 HOURS)", justify="center", style="bold blue")
+    header_panel = Panel(header_text, box=box.HEAVY_HEAD, padding=(0, 1))
+
+    # Show next 12 hours from current time
+    forecast_hours = hourly_data[:12]  # First 12 hours from current time
+    forecast_columns = create_hourly_forecast_panels(forecast_hours)
+
+    # Main forecast panel
+    forecast_panel = Panel(
+        forecast_columns,
+        title="",
+        box=box.ROUNDED,
+        expand=True,
+        padding=(1, 1)
+    )
+
+    # Footer
+    if display_mode.enable_auto_switch:
+        time_until_switch = display_mode.auto_switch_interval - (time.time() - display_mode.last_switch_time)
+        footer_text = Text(f"⌨️ Auto-switch in {int(time_until_switch)}s • Ctrl+C to quit", justify="center", style="yellow")
+    else:
+        footer_text = Text("⌨️ Type 'n' + Enter: return to main • Ctrl+C: quit", justify="center", style="yellow")
+    footer_panel = Panel(footer_text, box=box.SIMPLE, padding=(0, 1))
+
+    # Layout structure
+    layout.split(
+        Layout(name="header", size=3),
+        Layout(name="forecast", ratio=1),
+        Layout(name="footer", size=3)
+    )
+
+    layout["header"].update(header_panel)
+    layout["forecast"].update(forecast_panel)
+    layout["footer"].update(footer_panel)
+
+    return layout
+
 # --- Main Layout ---
 
 def build_layout(obs: Dict[str, Any], error: str, hourly_data: List[Dict[str, Any]], console: Console) -> Layout:
+    # Check if we're in full forecast mode
+    if display_mode.is_full_forecast():
+        return build_full_forecast_layout(hourly_data)
+
+    # Normal mode layout
     layout = Layout(name="root")
     layout.split(Layout(name="header", size=3), Layout(name="body", ratio=1), Layout(name="forecast", size=12), Layout(name="footer", size=1))
     layout["body"].split(Layout(name="row1", ratio=1), Layout(name="row2", ratio=1), Layout(name="row3", ratio=1))
@@ -306,17 +405,54 @@ def build_layout(obs: Dict[str, Any], error: str, hourly_data: List[Dict[str, An
     layout["row2"].split_row(humidity_panel(obs), wind_panel(obs), solar_panel(obs))
     layout["row3"].split_row(barometer_panel(obs), moon_phase_panel(obs), sun_panel(obs))
     layout["header"].update(header_panel(obs, error))
-    
+
     panel_width = 35
     num_panels = console.width // panel_width
     sliced_data = hourly_data[:num_panels]
     forecast_columns = create_hourly_forecast_panels(sliced_data)
     layout["forecast"].update(Panel(forecast_columns, title="[bold]Hourly Forecast[/bold]", box=box.HEAVY_HEAD, expand=True))
 
-    foot = Text("⌨️ Press Ctrl+C to quit • 🔄 Auto-refresh every ", justify="center")
+      # Show auto-switch status
+    if display_mode.enable_auto_switch:
+        time_until_switch = display_mode.auto_switch_interval - (time.time() - display_mode.last_switch_time)
+        status_text = f"⌨️ Press Ctrl+C to quit • Auto-switch in {int(time_until_switch)}s • 🔄 Auto-refresh every "
+    else:
+        status_text = f"⌨️ Ctrl+C: quit • Type 'n' + Enter: 12-24hr forecast • 🔄 Auto-refresh every "
+
+    foot = Text(status_text, justify="center")
     foot.append(str(REFRESH_SECONDS), style="bold").append("s")
     layout["footer"].update(foot)
     return layout
+
+# --- Keyboard Input Handler ---
+
+# Thread-safe queue for keyboard input
+input_queue = queue.Queue()
+
+def input_thread():
+    """Thread to handle keyboard input"""
+    while True:
+        try:
+            key = input().strip().lower()
+            if key == 'n':
+                input_queue.put('toggle')
+        except:
+            break
+
+# Start input thread
+threading.Thread(target=input_thread, daemon=True).start()
+
+def check_for_forecast_key():
+    """Check for 'n' key press to toggle forecast mode"""
+    try:
+        while not input_queue.empty():
+            command = input_queue.get_nowait()
+            if command == 'toggle':
+                display_mode.toggle_forecast()
+                return True
+    except:
+        pass
+    return False
 
 # --- Main Execution ---
 
@@ -330,13 +466,38 @@ def main() -> None:
 
     layout = build_layout(obs, last_err or last_hourly_err, hourly_data, console)
 
-    with Live(layout, refresh_per_second=10, screen=True, console=console) as live:
+    with Live(layout, refresh_per_second=4, screen=True, console=console) as live:
+        last_update_time = time.time()
         while True:
-            time.sleep(REFRESH_SECONDS)
-            obs, last_err = fetch_observation()
-            hourly_data, last_hourly_err = fetch_hourly_forecast()
+            # Check for 'n' key press
+            try:
+                check_for_forecast_key()
+            except:
+                pass
+
+            # Always update layout to reflect any mode changes immediately
             new_layout = build_layout(obs, last_err or last_hourly_err, hourly_data, console)
             live.update(new_layout)
+
+            # Refresh data when mode changes or in normal mode after timeout
+            current_time = time.time()
+            should_refresh = False
+
+            # Force refresh when mode changes
+            if display_mode.has_mode_changed():
+                should_refresh = True
+                last_update_time = current_time  # Reset timer
+
+            # Regular refresh in normal mode
+            elif not display_mode.is_full_forecast() and current_time - last_update_time >= REFRESH_SECONDS:
+                should_refresh = True
+                last_update_time = current_time
+
+            if should_refresh:
+                obs, last_err = fetch_observation()
+                hourly_data, last_hourly_err = fetch_hourly_forecast()
+
+            time.sleep(0.25)  # Short sleep for responsive UI
 
 if __name__ == "__main__":
     try:
