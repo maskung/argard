@@ -191,7 +191,7 @@ def header_panel(obs, error): # (Restored)
         style="bold", 
         box=box.SIMPLE, 
         padding=(0, 1),
-        subtitle="v1.1.1",
+        subtitle="v1.1.2",
         subtitle_align="right"
     )
 
@@ -254,22 +254,72 @@ def barometer_panel(obs): # (Restored)
     pressure = obs.get("metric", {}).get("pressure", "-")
     return Panel(Align.center(f"[bold bright_green]{pressure}[/] hPa"), title="🌡️  Barometer", box=box.ROUNDED)
 
-def sun_panel(obs): # (Restored)
+def get_season_info(day_of_year: int, year: int) -> Tuple[str, str, int, int, str]:
+    """Calculate current season based on astronomical events (approximate)
+    Returns: (season_name, emoji, days_in, days_until_next, next_season)"""
+    # Approximate day of year for astronomical events (Northern Hemisphere)
+    # Spring Equinox: ~March 20 (day ~79)
+    # Summer Solstice: ~June 21 (day ~172)
+    # Autumn Equinox: ~September 22 (day ~265)
+    # Winter Solstice: ~December 21 (day ~355)
+
+    # Check for leap year
+    is_leap = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+    days_in_year = 366 if is_leap else 365
+
+    if day_of_year < 79:
+        # Winter (Dec 21 - Mar 19)
+        season_start = 355 if not is_leap else 356
+        days_in = day_of_year + (days_in_year - season_start)
+        days_until = 79 - day_of_year
+        return "Winter", "❄️ ", days_in, days_until, "Spring 🌸"
+    elif day_of_year < 172:
+        # Spring (Mar 20 - Jun 20)
+        days_in = day_of_year - 79
+        days_until = 172 - day_of_year
+        return "Spring", "🌸 ", days_in, days_until, "Summer ☀️"
+    elif day_of_year < 265:
+        # Summer (Jun 21 - Sep 21)
+        days_in = day_of_year - 172
+        days_until = 265 - day_of_year
+        return "Summer", "☀️ ", days_in, days_until, "Autumn 🍂"
+    elif day_of_year < 355:
+        # Autumn (Sep 22 - Dec 20)
+        days_in = day_of_year - 265
+        days_until = 355 - day_of_year
+        return "Autumn", "🍂 ", days_in, days_until, "Winter ❄️"
+    else:
+        # Winter (Dec 21 - Dec 31)
+        days_in = day_of_year - 355
+        days_until = days_in_year - day_of_year + 79
+        return "Winter", "❄️ ", days_in, days_until, "Spring 🌸"
+
+def sun_panel(obs): # Updated with Season info
     lat, lon = obs.get("lat"), obs.get("lon")
     if lat is None or lon is None: return Panel("No location data", title="☀️ Sun Rise/Set")
     # Simplified calculation
     now = datetime.now()
     day_of_year = now.timetuple().tm_yday
+    year = now.year
     declination = 23.45 * math.sin(math.radians(360/365 * (day_of_year - 80)))
     hour_angle = math.degrees(math.acos(-math.tan(math.radians(lat)) * math.tan(math.radians(declination))))
     sunrise = 12 - hour_angle / 15
     sunset = 12 + hour_angle / 15
     daylight = sunset - sunrise
+
+    # Get season info
+    season_name, season_emoji, days_in_season, days_until_next, next_season = get_season_info(day_of_year, year)
+
     grid = Table.grid()
     grid.add_row("🌅 Sunrise:", f"{int(sunrise):02d}:{int((sunrise%1)*60):02d}")
     grid.add_row("🌇 Sunset:", f"{int(sunset):02d}:{int((sunset%1)*60):02d}")
     grid.add_row("☀️  Daylight:", f"{int(daylight)}h {int((daylight%1)*60)}m")
-    return Panel(Align.center(grid), title="☀️  Sun Rise/Set", box=box.ROUNDED)
+    grid.add_row("")  # Empty row separator
+    grid.add_row(f"{season_emoji} Season:", Text(f"{season_name}", style="cyan bold"))
+    grid.add_row("📅 Days in:", f"{days_in_season} days")
+    grid.add_row("⏭️  Next:", Text(f"{next_season} ({days_until_next}d)", style="yellow"))
+
+    return Panel(Align.center(grid), title="☀️  Sun Rise/Set • Seasons", box=box.ROUNDED)
 
 def moon_phase_panel(obs): # (Restored)
     """Display current moon phase based on date with new moon and full moon info"""
