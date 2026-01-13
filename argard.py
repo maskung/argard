@@ -322,11 +322,21 @@ def sun_panel(obs): # Updated with Season info
     return Panel(Align.center(grid), title="☀️  Sun Rise/Set • Seasons", box=box.ROUNDED)
 
 def moon_phase_panel(obs): # (Restored)
-    """Display current moon phase based on date with new moon and full moon info"""
+    """Display current moon phase based on known reference date"""
     now = datetime.now()
-    day_of_year = now.timetuple().tm_yday
-    moon_cycle = 29.53
-    phase = (day_of_year % moon_cycle) / moon_cycle
+    
+    # Reference New Moon: January 6, 2000, 18:14 UTC
+    # We use a known reference point to calculate the phase accurately
+    ref_new_moon = datetime(2000, 1, 6, 18, 14)
+    synodic_month = 29.53058867
+    
+    # Calculate time difference
+    diff = now - ref_new_moon
+    days_passed = diff.total_seconds() / 86400
+    
+    # Calculate phase (0.0 to 0.999...)
+    lunations = days_passed / synodic_month
+    phase = lunations % 1
     
     is_new_moon, is_full_moon = False, False
 
@@ -339,8 +349,8 @@ def moon_phase_panel(obs): # (Restored)
     elif phase < 0.8125: moon_emoji, phase_name = "🌗", "Last Quarter"
     else: moon_emoji, phase_name = "🌘", "Waning Crescent"
     
-    days_since_new = (day_of_year % moon_cycle)
-    days_until_new = moon_cycle - days_since_new
+    days_since_new = phase * synodic_month
+    days_until_new = synodic_month - days_since_new
     next_new_moon = now + timedelta(days=days_until_new)
     
     moon_display = Text(justify="center")
