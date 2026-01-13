@@ -191,7 +191,7 @@ def header_panel(obs, error): # (Restored)
         style="bold", 
         box=box.SIMPLE, 
         padding=(0, 1),
-        subtitle="v1.1.3",
+        subtitle="v1.1.4",
         subtitle_align="right"
     )
 
