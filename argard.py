@@ -321,6 +321,31 @@ def sun_panel(obs): # Updated with Season info
 
     return Panel(Align.center(grid), title="☀️  Sun Rise/Set • Seasons", box=box.ROUNDED)
 
+
+def get_thai_lunar_info(phase):
+    """
+    Convert moon phase (0.0-1.0) to Thai Lunar Day
+    Returns: (str: Description, bool: is_wan_phra)
+    """
+    synodic_month = 29.53059
+    days_old = phase * synodic_month
+    
+    # Half month is approx 14.76 days.
+    # We round to nearest integer day.
+    
+    if days_old < 14.7653: # Adjusted slightly to include 0.5 phase (Full Moon) in Waxing
+        # Waxing (Kuen)
+        day = int(days_old) + 1
+        desc = f"ขึ้น {day} ค่ำ"
+        is_wan_phra = day in [8, 15]
+    else:
+        # Waning (Ram)
+        day = int(days_old - 14.7653) + 1
+        desc = f"แรม {day} ค่ำ"
+        is_wan_phra = day in [8, 15] # Note: Ram 14 or 15 can be Wan Phra depending on month length, simplified here to 15
+        
+    return desc, is_wan_phra
+
 def moon_phase_panel(obs): # (Restored)
     """Display current moon phase based on known reference date"""
     now = datetime.now()
@@ -353,9 +378,17 @@ def moon_phase_panel(obs): # (Restored)
     days_until_new = synodic_month - days_since_new
     next_new_moon = now + timedelta(days=days_until_new)
     
+    # Thai Lunar Info
+    thai_desc, is_wan_phra = get_thai_lunar_info(phase)
+
     moon_display = Text(justify="center")
     moon_display.append(f"{moon_emoji}\n\n{phase_name}\n")
     
+    # Wan Phra / Thai Date display
+    if is_wan_phra:
+        moon_display.append(f"☸️  วันนี้วันพระ\n", style="bold bright_yellow")
+    moon_display.append(f"{thai_desc}\n", style="yellow" if is_wan_phra else "white")
+
     if is_new_moon: moon_display.append("🌑 NEW MOON!\n", style="bold bright_yellow")
     elif is_full_moon: moon_display.append("🌕 FULL MOON!\n", style="bold bright_white")
 
