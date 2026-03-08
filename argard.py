@@ -38,10 +38,10 @@ openweather_config = config['OpenWeather']
 OPENWEATHER_API_KEY = openweather_config.get('API_KEY')
 LATITUDE = openweather_config.getfloat('LATITUDE')
 LONGITUDE = openweather_config.getfloat('LONGITUDE')
+# Updated to use v2.5 forecast endpoint (OneCall 3.0 is deprecated/restricted)
 OPENWEATHER_API_URL = (
-    f"https://api.openweathermap.org/data/3.0/onecall?"
-    f"lat={LATITUDE}&lon={LONGITUDE}&exclude=minutely,daily,alerts&units=metric&appid="
-    f"{OPENWEATHER_API_KEY}"
+    f"https://api.openweathermap.org/data/2.5/forecast?"
+    f"lat={LATITUDE}&lon={LONGITUDE}&units=metric&appid={OPENWEATHER_API_KEY}"
 )
 
 # General Settings
@@ -115,7 +115,31 @@ def fetch_hourly_forecast() -> Tuple[List[Dict[str, Any]], str]:
             if resp.status != 200:
                 return [], f"HTTP {resp.status}"
             data = json.loads(resp.read().decode("utf-8"))
-            return data.get("hourly", []), ""
+
+            # Convert v2.5 forecast format to match the existing code structure
+            # v2.5 returns data in "list" array, while v3.0 OneCall returned "hourly"
+            forecast_list = data.get("list", [])
+
+            # Transform each item to match the expected structure
+            hourly_data = []
+            for item in forecast_list:
+                transformed = {
+                    "dt": item.get("dt"),
+                    "temp": item.get("main", {}).get("temp"),
+                    "feels_like": item.get("main", {}).get("feels_like"),
+                    "weather": item.get("weather", []),
+                    "pop": item.get("pop", 0),  # Probability of precipitation
+                    "wind_speed": item.get("wind", {}).get("speed"),
+                    "wind_deg": item.get("wind", {}).get("deg"),
+                    "clouds": item.get("clouds", {}).get("all"),
+                    "visibility": item.get("visibility"),
+                    "pressure": item.get("main", {}).get("pressure"),
+                    "humidity": item.get("main", {}).get("humidity"),
+                    "rain": item.get("rain", {})  # May contain "3h" key
+                }
+                hourly_data.append(transformed)
+
+            return hourly_data, ""
     except Exception as e:
         return [], f"Error: {e}"
 
@@ -187,11 +211,11 @@ def header_panel(obs, error): # (Restored)
     status = f"🌤️ Station: {station} | 📅 Obs: {obs_time} | 🕐 Now: {now_str}"
     if error: status += f"  •  [bold red]❌ Error:[/] {error}"
     return Panel(
-        Text(status, justify="center"), 
-        style="bold", 
-        box=box.SIMPLE, 
+        Text(status, justify="center"),
+        style="bold",
+        box=box.SIMPLE,
         padding=(0, 1),
-        subtitle="v1.1.4",
+        subtitle="v1.1.5",
         subtitle_align="right"
     )
 
