@@ -192,6 +192,37 @@ def get_uv_description(u):
         if u <= 10: return "🥵 Very High", "red"
         return "😱 Extreme", "bold magenta"
     except: return "🤷 N/A", "dim"
+
+def get_solar_description(s):
+    """Return (description, style) for solar radiation in W/m²."""
+    try:
+        s = float(s)
+        if s <= 50:   return "🌑 มืด", "dim"
+        if s <= 150:  return "🌤️ แสงอ่อน", "cyan"
+        if s <= 350:  return "☀️ แสงปานกลาง", "green"
+        if s <= 600:  return "🔆 แสงจัด", "yellow"
+        if s <= 850:  return "🔥 แสงแรง", "orange3"
+        return "💥 แสงรุนแรง", "bold red"
+    except: return "🤷 N/A", "dim"
+
+def make_solar_gauge(s, width=20):
+    """Return a visual gauge bar string for solar radiation (0–1200 W/m²)."""
+    try:
+        s = float(s)
+        max_val = 1200.0
+        ratio = min(max(s / max_val, 0), 1.0)
+        filled = int(ratio * width)
+        empty = width - filled
+        # Color based on level
+        if ratio < 0.15:   color = "dim"
+        elif ratio < 0.35: color = "cyan"
+        elif ratio < 0.55: color = "green"
+        elif ratio < 0.70: color = "yellow"
+        elif ratio < 0.85: color = "orange3"
+        else:              color = "red"
+        return f"[{color}]{'█' * filled}{'░' * empty}[/]"
+    except:
+        return f"[dim]{'░' * width}[/]"
 def get_weather_emoji(icon):
     if "01" in icon: return "☀️" if "d" in icon else "🌙"
     if "02" in icon: return "🌤️" if "d" in icon else "☁️"
@@ -215,7 +246,7 @@ def header_panel(obs, error): # (Restored)
         style="bold",
         box=box.SIMPLE,
         padding=(0, 1),
-        subtitle="v1.1.5",
+        subtitle="v1.1.6",
         subtitle_align="right"
     )
 
@@ -257,11 +288,16 @@ def rain_panel(obs): # (Restored)
 
 def solar_panel(obs): # (Restored)
     uv, solar = obs.get("uv", "-"), obs.get("solarRadiation", "-")
-    desc, style = get_uv_description(uv)
+    uv_desc, uv_style = get_uv_description(uv)
+    solar_desc, solar_style = get_solar_description(solar)
+    gauge = make_solar_gauge(solar)
     grid = Table.grid(padding=(0, 2))
-    grid.add_row("☀️  UV Index:", Text(str(uv), style=style))
-    grid.add_row("😎 UV Level:", Text(desc, style=style))
-    grid.add_row("⚡ Solar Rad.:", f"{solar} W/m²")
+    grid.add_column(justify="right")
+    grid.add_column(justify="left")
+    grid.add_row("☀️  UV Index:", Text(str(uv), style=uv_style))
+    grid.add_row("😎 UV Level:", Text(uv_desc, style=uv_style))
+    grid.add_row("  ⚡ Solar Rad.:", Text(f"{solar} W/m²", style=solar_style))
+    grid.add_row("  🔆 Intensity:", Text.from_markup(f"[{solar_style}]{solar_desc}[/]  {gauge}"))
     return Panel(Align.center(grid), title="☀️  Solar • UV", box=box.ROUNDED, padding=(0, 1))
 
 def humidity_panel(obs): # (Restored)
