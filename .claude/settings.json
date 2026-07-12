@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://air-quality-api.open-meteo.com/v1/air-quality?latitude=12.701&longitude=102.231&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide,european_aqi&timezone=auto\")"
+    ]
+  }
+}

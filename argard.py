@@ -44,6 +44,13 @@ OPENWEATHER_API_URL = (
     f"lat={LATITUDE}&lon={LONGITUDE}&units=metric&appid={OPENWEATHER_API_KEY}"
 )
 
+# Open-Meteo Air Quality API (free, no key needed — reuses the same lat/lon)
+AIR_QUALITY_API_URL = (
+    f"https://air-quality-api.open-meteo.com/v1/air-quality?"
+    f"latitude={LATITUDE}&longitude={LONGITUDE}"
+    f"&current=us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide&timezone=auto"
+)
+
 # General Settings
 general_config = config['General']
 REFRESH_SECONDS = general_config.getint('REFRESH_SECONDS')
@@ -143,6 +150,19 @@ def fetch_hourly_forecast() -> Tuple[List[Dict[str, Any]], str]:
     except Exception as e:
         return [], f"Error: {e}"
 
+def fetch_air_quality() -> Tuple[Dict[str, Any], str]:
+    """Fetch current air quality (US AQI, PM2.5, PM10) from Open-Meteo."""
+    headers = {"User-Agent": "pws-rich-dashboard/1.0", "Accept": "application/json"}
+    req = Request(AIR_QUALITY_API_URL, headers=headers)
+    try:
+        with urlopen(req, timeout=10) as resp:
+            if resp.status != 200:
+                return {}, f"AQI HTTP {resp.status}"
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("current") or {}, ""
+    except Exception as e:
+        return {}, f"AQI Error: {e}"
+
 # --- Helper Functions ---
 
 def ms_to_kmh(v): return round(float(v) * 3.6, 1) if isinstance(v, (int, float)) else v
@@ -192,6 +212,19 @@ def get_uv_description(u):
         if u <= 10: return "🥵 Very High", "red"
         return "😱 Extreme", "bold magenta"
     except: return "🤷 N/A", "dim"
+
+def get_aqi_description(aqi):
+    """Return (emoji, category, style) for US AQI (US EPA standard, same scale AirVisual uses)."""
+    try:
+        aqi = float(aqi)
+    except:
+        return "🤷", "N/A", "dim"
+    if aqi <= 50:  return "😊", "Good", "green"
+    if aqi <= 100: return "😐", "Moderate", "yellow"
+    if aqi <= 150: return "😮", "Unhealthy (Sensitive)", "orange3"
+    if aqi <= 200: return "😷", "Unhealthy", "red"
+    if aqi <= 300: return "🤢", "Very Unhealthy", "bold magenta"
+    return "☠️ ", "Hazardous", "bold red"
 
 def get_solar_description(s):
     """Return (description, style) for solar radiation in W/m²."""
@@ -246,7 +279,7 @@ def header_panel(obs, error): # (Restored)
         style="bold",
         box=box.SIMPLE,
         padding=(0, 1),
-        subtitle="v1.1.6",
+        subtitle="v1.2.0",
         subtitle_align="right"
     )
 
@@ -310,9 +343,22 @@ def humidity_panel(obs): # (Restored)
     except: pass
     return Panel(Align.center(display), title="💧 Humidity", subtitle="Relative", box=box.ROUNDED, padding=(0, 1))
 
-def barometer_panel(obs): # (Restored)
+def barometer_panel(obs, aq=None): # Barometer + Air Quality (US AQI)
     pressure = obs.get("metric", {}).get("pressure", "-")
-    return Panel(Align.center(f"[bold bright_green]{pressure}[/] hPa"), title="🌡️  Barometer", box=box.ROUNDED)
+    us_aqi = (aq or {}).get("us_aqi", "-")
+    pm25 = (aq or {}).get("pm2_5", "-")
+    pm10 = (aq or {}).get("pm10", "-")
+    aqi_emoji, aqi_level, aqi_style = get_aqi_description(us_aqi)
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_column(justify="right")
+    grid.add_column(justify="left")
+    grid.add_row("🌡️  Pressure:", f"[bold bright_green]{pressure}[/] hPa")
+    grid.add_row("")  # separator
+    grid.add_row(f"{aqi_emoji} US AQI:", Text(f"{us_aqi}  {aqi_level}", style=aqi_style))
+    grid.add_row("💨 PM2.5:", f"{pm25} µg/m³")
+    grid.add_row("🌫️  PM10:", f"{pm10} µg/m³")
+    return Panel(Align.center(grid), title="🌡️  Barometer • Air Quality", box=box.ROUNDED, padding=(0, 1))
 
 def get_season_info(day_of_year: int, year: int) -> Tuple[str, str, int, int, str]:
     """Calculate current season based on astronomical events (approximate)
@@ -545,7 +591,7 @@ def build_full_forecast_layout(hourly_data: List[Dict[str, Any]]) -> Layout:
 
 # --- Main Layout ---
 
-def build_layout(obs: Dict[str, Any], error: str, hourly_data: List[Dict[str, Any]], console: Console) -> Layout:
+def build_layout(obs: Dict[str, Any], error: str, hourly_data: List[Dict[str, Any]], console: Console, aq: Dict[str, Any] = None) -> Layout:
     # Check if we're in full forecast mode
     if display_mode.is_full_forecast():
         return build_full_forecast_layout(hourly_data)
@@ -556,7 +602,7 @@ def build_layout(obs: Dict[str, Any], error: str, hourly_data: List[Dict[str, An
     layout["body"].split(Layout(name="row1", ratio=1), Layout(name="row2", ratio=1), Layout(name="row3", ratio=1))
     layout["row1"].split_row(thermal_panel(obs), rain_panel(obs))
     layout["row2"].split_row(humidity_panel(obs), wind_panel(obs), solar_panel(obs))
-    layout["row3"].split_row(barometer_panel(obs), moon_phase_panel(obs), sun_panel(obs))
+    layout["row3"].split_row(barometer_panel(obs, aq), moon_phase_panel(obs), sun_panel(obs))
     layout["header"].update(header_panel(obs, error))
 
     panel_width = 35
@@ -633,12 +679,14 @@ def check_for_forecast_key():
 def main() -> None:
     console = Console()
     obs, last_err, hourly_data, last_hourly_err = {}, "", [], ""
+    aq, last_aq_err = {}, ""
 
     with console.status("[bold green]Fetching data..."):
         obs, last_err = fetch_observation()
         hourly_data, last_hourly_err = fetch_hourly_forecast()
+        aq, last_aq_err = fetch_air_quality()
 
-    layout = build_layout(obs, last_err or last_hourly_err, hourly_data, console)
+    layout = build_layout(obs, last_err or last_hourly_err or last_aq_err, hourly_data, console, aq)
 
     with Live(layout, refresh_per_second=4, screen=True, console=console) as live:
         last_update_time = time.time()
@@ -650,7 +698,7 @@ def main() -> None:
                 pass
 
             # Always update layout to reflect any mode changes immediately
-            new_layout = build_layout(obs, last_err or last_hourly_err, hourly_data, console)
+            new_layout = build_layout(obs, last_err or last_hourly_err or last_aq_err, hourly_data, console, aq)
             live.update(new_layout)
 
             # Refresh data when mode changes or in normal mode after timeout
@@ -670,6 +718,7 @@ def main() -> None:
             if should_refresh:
                 obs, last_err = fetch_observation()
                 hourly_data, last_hourly_err = fetch_hourly_forecast()
+                aq, last_aq_err = fetch_air_quality()
 
             time.sleep(0.25)  # Short sleep for responsive UI
 
